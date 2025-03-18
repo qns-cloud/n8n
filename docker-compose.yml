@@ -2,9 +2,7 @@ version: '3.8'
 
 volumes:
   db_storage:
-    driver: local
   n8n_storage:
-    driver: local
 
 networks:
   n8n-network:
@@ -22,7 +20,6 @@ services:
       - POSTGRES_NON_ROOT_PASSWORD=n8n
     volumes:
       - db_storage:/var/lib/postgresql/data
-      - ./init-data.sh:/docker-entrypoint-initdb.d/init-data.sh:ro
     networks:
       - n8n-network
     healthcheck:
