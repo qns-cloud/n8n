@@ -76,7 +76,7 @@ services:
       start_period: 30s
 
   db:
-    image: postgres:13-alpine
+    image: postgres:17-alpine
     environment:
       - POSTGRES_USER=${N8N_DB_USER:-n8n_user}
       - POSTGRES_PASSWORD_FILE=/run/secrets/db_password
