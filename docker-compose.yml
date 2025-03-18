@@ -1,5 +1,14 @@
 version: '3.8'
 
+# Use Docker secrets for sensitive information
+secrets:
+  db_password:
+    external: true
+  n8n_auth_password:
+    external: true
+  n8n_encryption_key:
+    external: true
+
 services:
   n8n:
     image: n8nio/n8n
@@ -9,13 +18,18 @@ services:
       - DB_POSTGRESDB_PORT=5432
       - DB_POSTGRESDB_DATABASE=n8n
       - DB_POSTGRESDB_USER=${N8N_DB_USER:-n8n_user}
-      - DB_POSTGRESDB_PASSWORD=${N8N_DB_PASSWORD:-n8n_pass}
+      # Use Docker secrets for sensitive information
+      - DB_POSTGRESDB_PASSWORD_FILE=/run/secrets/db_password
       - N8N_BASIC_AUTH_ACTIVE=true
       - N8N_BASIC_AUTH_USER=${N8N_AUTH_USER:-admin}
-      - N8N_BASIC_AUTH_PASSWORD=${N8N_AUTH_PASSWORD:-yourpassword}
-      - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY:-your_secret_key}
+      - N8N_BASIC_AUTH_PASSWORD_FILE=/run/secrets/n8n_auth_password
+      - N8N_ENCRYPTION_KEY_FILE=/run/secrets/n8n_encryption_key
       - N8N_HOST=${N8N_HOST:-localhost}
       - N8N_PROTOCOL=${N8N_PROTOCOL:-http}
+    secrets:
+      - db_password
+      - n8n_auth_password
+      - n8n_encryption_key
     volumes:
       - n8n_data:/home/node/.n8n
     ports:
@@ -25,11 +39,14 @@ services:
     networks:
       - n8n-network
     deploy:
+      mode: replicated
       replicas: 2
       update_config:
         parallelism: 1
         delay: 10s
         order: start-first
+        failure_action: rollback
+        monitor: 60s
       restart_policy:
         condition: on-failure
         max_attempts: 3
@@ -44,10 +61,13 @@ services:
       placement:
         constraints:
           - node.role == worker
+        preferences:
+          - spread: node.labels.zone
       rollback_config:
         parallelism: 1
         delay: 10s
         order: stop-first
+        failure_action: pause
     healthcheck:
       test: ["CMD", "wget", "--spider", "http://localhost:5678/healthz"]
       interval: 30s
@@ -59,18 +79,23 @@ services:
     image: postgres:13-alpine
     environment:
       - POSTGRES_USER=${N8N_DB_USER:-n8n_user}
-      - POSTGRES_PASSWORD=${N8N_DB_PASSWORD:-n8n_pass}
+      - POSTGRES_PASSWORD_FILE=/run/secrets/db_password
       - POSTGRES_DB=n8n
+    secrets:
+      - db_password
     volumes:
       - postgres_data:/var/lib/postgresql/data
     networks:
       - n8n-network
     deploy:
+      mode: replicated
       replicas: 1
       update_config:
         parallelism: 1
         delay: 10s
         order: stop-first
+        failure_action: rollback
+        monitor: 60s
       restart_policy:
         condition: on-failure
         max_attempts: 3
@@ -85,6 +110,8 @@ services:
       placement:
         constraints:
           - node.role == worker
+        preferences:
+          - spread: node.labels.zone
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${N8N_DB_USER:-n8n_user} -d n8n"]
       interval: 10s
@@ -97,23 +124,31 @@ networks:
   n8n-network:
     driver: overlay
     attachable: true
+    driver_opts:
+      encrypted: "true"
+    ipam:
+      driver: default
+      config:
+        - subnet: 10.0.0.0/24
 
 volumes:
   n8n_data:
-    driver: ${VOLUME_DRIVER:-local}
+    driver: ${VOLUME_DRIVER:-nfs}
     driver_opts:
-      type: ${VOLUME_TYPE:-none}
-      o: ${VOLUME_OPTIONS:-bind}
-      device: ${N8N_DATA_PATH:-/var/lib/docker/volumes/n8n_data}
+      type: ${VOLUME_TYPE:-nfs}
+      o: ${VOLUME_OPTIONS:-addr=nfs-server.example.com,rw,nfsvers=4}
+      device: ${N8N_DATA_PATH:-:/exports/n8n_data}
     labels:
       com.n8n.description: "n8n data volume"
       com.n8n.backup: "true"
+      com.n8n.environment: "swarm"
   postgres_data:
-    driver: ${VOLUME_DRIVER:-local}
+    driver: ${VOLUME_DRIVER:-nfs}
     driver_opts:
-      type: ${VOLUME_TYPE:-none}
-      o: ${VOLUME_OPTIONS:-bind}
-      device: ${POSTGRES_DATA_PATH:-/var/lib/docker/volumes/postgres_data}
+      type: ${VOLUME_TYPE:-nfs}
+      o: ${VOLUME_OPTIONS:-addr=nfs-server.example.com,rw,nfsvers=4}
+      device: ${POSTGRES_DATA_PATH:-:/exports/postgres_data}
     labels:
       com.n8n.description: "PostgreSQL data volume"
       com.n8n.backup: "true"
+      com.n8n.environment: "swarm"
