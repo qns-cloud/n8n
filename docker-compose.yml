@@ -3,11 +3,11 @@ version: '3.8'
 # Use Docker secrets for sensitive information
 secrets:
   db_password:
-    external: true
+    file: ./secrets/db_password.txt
   n8n_auth_password:
-    external: true
+    file: ./secrets/n8n_auth_password.txt
   n8n_encryption_key:
-    external: true
+    file: ./secrets/n8n_encryption_key.txt
 
 services:
   n8n:
