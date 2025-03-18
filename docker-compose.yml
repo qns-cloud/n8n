@@ -1,0 +1,119 @@
+version: '3.8'
+
+services:
+  n8n:
+    image: n8nio/n8n
+    environment:
+      - DB_TYPE=postgresdb
+      - DB_POSTGRESDB_HOST=db
+      - DB_POSTGRESDB_PORT=5432
+      - DB_POSTGRESDB_DATABASE=n8n
+      - DB_POSTGRESDB_USER=${N8N_DB_USER:-n8n_user}
+      - DB_POSTGRESDB_PASSWORD=${N8N_DB_PASSWORD:-n8n_pass}
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=${N8N_AUTH_USER:-admin}
+      - N8N_BASIC_AUTH_PASSWORD=${N8N_AUTH_PASSWORD:-yourpassword}
+      - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY:-your_secret_key}
+      - N8N_HOST=${N8N_HOST:-localhost}
+      - N8N_PROTOCOL=${N8N_PROTOCOL:-http}
+    volumes:
+      - n8n_data:/home/node/.n8n
+    ports:
+      - "5678:5678"
+    depends_on:
+      - db
+    networks:
+      - n8n-network
+    deploy:
+      replicas: 2
+      update_config:
+        parallelism: 1
+        delay: 10s
+        order: start-first
+      restart_policy:
+        condition: on-failure
+        max_attempts: 3
+        window: 120s
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+      placement:
+        constraints:
+          - node.role == worker
+      rollback_config:
+        parallelism: 1
+        delay: 10s
+        order: stop-first
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "http://localhost:5678/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  db:
+    image: postgres:13-alpine
+    environment:
+      - POSTGRES_USER=${N8N_DB_USER:-n8n_user}
+      - POSTGRES_PASSWORD=${N8N_DB_PASSWORD:-n8n_pass}
+      - POSTGRES_DB=n8n
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - n8n-network
+    deploy:
+      replicas: 1
+      update_config:
+        parallelism: 1
+        delay: 10s
+        order: stop-first
+      restart_policy:
+        condition: on-failure
+        max_attempts: 3
+        window: 120s
+      resources:
+        limits:
+          cpus: '1'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+      placement:
+        constraints:
+          - node.role == worker
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${N8N_DB_USER:-n8n_user} -d n8n"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+
+networks:
+  n8n-network:
+    driver: overlay
+    attachable: true
+
+volumes:
+  n8n_data:
+    driver: ${VOLUME_DRIVER:-local}
+    driver_opts:
+      type: ${VOLUME_TYPE:-none}
+      o: ${VOLUME_OPTIONS:-bind}
+      device: ${N8N_DATA_PATH:-/var/lib/docker/volumes/n8n_data}
+    labels:
+      com.n8n.description: "n8n data volume"
+      com.n8n.backup: "true"
+  postgres_data:
+    driver: ${VOLUME_DRIVER:-local}
+    driver_opts:
+      type: ${VOLUME_TYPE:-none}
+      o: ${VOLUME_OPTIONS:-bind}
+      device: ${POSTGRES_DATA_PATH:-/var/lib/docker/volumes/postgres_data}
+    labels:
+      com.n8n.description: "PostgreSQL data volume"
+      com.n8n.backup: "true"
